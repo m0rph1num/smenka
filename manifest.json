@@ -1,9 +1,9 @@
 {
   "name": "Сменка",
   "short_name": "Сменка",
-  "start_url": "/",
-  "scope": "/",
-  "id": "/",
+  "start_url": "/smenka/",
+  "scope": "/smenka/",
+  "id": "/smenka/",
   "display": "standalone",
   "background_color": "#121212",
   "theme_color": "#6D9F71",

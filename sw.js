@@ -3,16 +3,16 @@ const CACHE_NAME = "smenka-v1.0.0"; // Меняйте при каждом рел
 
 // Файлы для кеширования при установке
 const urlsToCache = [
-  "/",
-  "/index.html",
-  "/main.js",
-  "/main.css",
-  "/manifest.json",
-  "/images/icon-192.png",
-  "/images/icon-512.png",
-  "/images/favicon-32x32.png",
-  "/images/favicon-16x16.png",
-  "/images/banner.png",
+  "/smenka/",
+  "/smenka/index.html",
+  "/smenka/main.js",
+  "/smenka/main.css",
+  "/smenka/manifest.json",
+  "/smenka/images/icon-192.png",
+  "/smenka/images/icon-512.png",
+  "/smenka/images/favicon-32x32.png",
+  "/smenka/images/favicon-16x16.png",
+  "/smenka/images/banner.png",
 ];
 
 // Установка service worker
