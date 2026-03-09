@@ -4,7 +4,7 @@ const CACHE_NAME = "smenka-v1.0.0"; // Меняйте при каждом рел
 // Файлы для кеширования при установке
 const urlsToCache = [
   "/",
-  "/main.html",
+  "/index.html",
   "/main.js",
   "/main.css",
   "/manifest.json",
