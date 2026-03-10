@@ -1,5 +1,5 @@
 // sw.js — Service Worker для PWA Сменка
-const CACHE_NAME = "smenka-v1.0.0"; // Меняйте при каждом релизе
+const CACHE_NAME = "smenka-v1.0.1"; // Меняйте при каждом релизе
 
 // Файлы для кеширования при установке
 const urlsToCache = [

@@ -579,7 +579,13 @@ button,
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(to bottom, var(--color-bg-tertiary) 0%, transparent 25%, transparent 75%, var(--color-bg-tertiary) 100%);
+  background: linear-gradient(
+    to bottom,
+    var(--color-bg-tertiary) 0%,
+    transparent 25%,
+    transparent 75%,
+    var(--color-bg-tertiary) 100%
+  );
   pointer-events: none;
   z-index: 2;
 }
@@ -649,12 +655,38 @@ button,
 /* Футер - только кнопка подтверждения */
 .month-picker-footer {
   display: flex;
-  justify-content: center;
+  align-items: center;
+  justify-content: space-between;
   padding: 8px 20px 20px;
+  gap: 8px;
+}
+
+/* Кнопка сброса к текущей дате */
+.month-picker-button--reset {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+
+.month-picker-button--reset:hover {
+  background-color: var(--color-accent-muted);
+  color: var(--color-accent-primary);
 }
 
 .month-picker-button--confirm {
-  width: 100%;
+  flex: 1;
   padding: 16px;
   border-radius: 16px;
   font-size: 16px;
@@ -1319,6 +1351,19 @@ button,
   background-color: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+  z-index: 3000;
+  cursor: pointer;
+}
+
+/* Анимация закрытия */
+.time-picker-modal.closing {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.time-picker-modal.closing .time-picker-container {
+  transform: scale(0.95);
+  transition: transform 0.2s ease;
 }
 
 .time-picker-container {
@@ -1356,7 +1401,7 @@ button,
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  display: flex;
+  display: flex !important; /* force display */
   align-items: center;
   justify-content: center;
   color: var(--color-text-secondary);
@@ -1364,6 +1409,8 @@ button,
   transition: background-color 0.2s ease;
   cursor: pointer;
   border: none;
+  z-index: 3010; /* выше чем контейнер */
+  position: relative;
 }
 
 .time-picker-close:hover {
@@ -1373,6 +1420,7 @@ button,
 .time-picker-close svg {
   width: 20px;
   height: 20px;
+  pointer-events: none;
 }
 
 /* Барабаны */
@@ -1405,7 +1453,13 @@ button,
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(to bottom, var(--color-bg-tertiary) 0%, transparent 25%, transparent 75%, var(--color-bg-tertiary) 100%);
+  background: linear-gradient(
+    to bottom,
+    var(--color-bg-tertiary) 0%,
+    transparent 25%,
+    transparent 75%,
+    var(--color-bg-tertiary) 100%
+  );
   pointer-events: none;
   z-index: 2;
 }
@@ -2040,9 +2094,7 @@ body {
   background: var(--color-bg-secondary);
   padding: 8px;
   box-sizing: border-box;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  height: 200px; /* Ещё выше, чтобы полосы были крупными */
+  height: 200px;
   width: 100%;
 }
 
@@ -2895,11 +2947,13 @@ body {
   padding: 6px;
   border-radius: 12px;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
   width: 70px;
   min-width: 70px;
   max-width: 70px;
-  height: 32px; /* фиксированная высота */
+  height: 32px;
   min-height: 32px;
   max-height: 32px;
   text-align: center;
@@ -2914,21 +2968,31 @@ body {
 
 /* При наведении */
 .settings-item-value:hover {
-  background-color: var(--color-accent-hover);
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 2px rgba(109, 159, 113, 0.2);
 }
 
 /* При фокусе внутри - всё остаётся точно таким же */
 .settings-item-value:focus-within {
   outline: none;
-  border-color: transparent;
-  background-color: var(--color-accent-muted);
-  width: 70px;
-  min-width: 70px;
-  max-width: 70px;
-  height: 32px;
-  min-height: 32px;
-  max-height: 32px;
-  padding: 6px; /* тот же padding */
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 2px rgba(109, 159, 113, 0.3);
+}
+
+/* Анимация сохранения (зелёная обводка по кругу) */
+@keyframes savePulse {
+  0% {
+    border-color: var(--color-accent-primary);
+    box-shadow: 0 0 0 0 rgba(109, 159, 113, 0.7);
+  }
+  70% {
+    border-color: var(--color-accent-primary);
+    box-shadow: 0 0 0 4px rgba(109, 159, 113, 0);
+  }
+  100% {
+    border-color: transparent;
+    box-shadow: 0 0 0 0 rgba(109, 159, 113, 0);
+  }
 }
 
 /* ===== ТЕКСТ ЗНАЧЕНИЯ ===== */
@@ -2942,6 +3006,10 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1;
+}
+
+.settings-item-value.saved {
+  animation: savePulse 0.6s ease-out;
 }
 
 /* ===== ПОЛЕ ВВОДА ===== */
@@ -3088,15 +3156,17 @@ body {
   cursor: pointer;
   transition: transform 0.2s ease;
   width: 100%;
-  height: auto; /* автоматическая высота под картинку */
+  height: auto;
   margin-top: 8px;
+  box-sizing: border-box;
 }
 
 .settings-banner img {
   width: 100%;
   height: auto;
   display: block;
-  object-fit: contain; /* сохраняет пропорции */
+  object-fit: cover;
+  border-radius: 16px;
 }
 
 /* ===== КНОПКА СКАЧИВАНИЯ ОТЧЁТА ===== */
@@ -3132,4 +3202,38 @@ body {
   width: 20px;
   height: 20px;
   stroke: currentColor;
+}
+
+/* Стиль для поля с ошибкой */
+.day-modal-input.error,
+.day-modal-quantity-input.error {
+  border-color: var(--color-semantic-error) !important;
+  background-color: rgba(207, 111, 111, 0.1);
+  animation: shake 0.3s ease-in-out;
+}
+
+/* Анимация встряхивания */
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-5px);
+  }
+  40% {
+    transform: translateX(5px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+
+/* Стили для ошибки в селекте */
+.day-modal-select.error {
+  border-color: var(--color-semantic-error) !important;
+  background-color: rgba(207, 111, 111, 0.1);
 }
