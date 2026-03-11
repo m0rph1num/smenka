@@ -83,7 +83,7 @@
   // ==========================================================================
   // 4.1 ВЕРСИЯ ПРИЛОЖЕНИЯ
   // ==========================================================================
-  const APP_VERSION = "1.0.2";
+  const APP_VERSION = "1.0.3";
 
   // ==========================================================================
   // 5. СОСТОЯНИЕ ПРИЛОЖЕНИЯ
@@ -617,36 +617,48 @@
 
   function loadDayData(date) {
     if (!shiftStart || !shiftEnd) return;
+
     const dateKey = formatDateKey(date.getFullYear(), date.getMonth(), date.getDate());
     const saved = localStorage.getItem(dateKey);
     const positionItems = document.querySelectorAll(".day-modal-position-item");
 
+    // Устанавливаем время (всегда, даже если нет сохранённых данных)
+    shiftStart.value = "07:00";
+    shiftEnd.value = "15:30";
+
     if (saved) {
       try {
         const data = JSON.parse(saved);
-        shiftStart.value = data.startTime || "07:00";
-        shiftEnd.value = data.endTime || "15:30";
 
+        // Устанавливаем сохранённое время
+        if (data.startTime) shiftStart.value = data.startTime;
+        if (data.endTime) shiftEnd.value = data.endTime;
+
+        // Заполняем позиции
         if (data.positions && Array.isArray(data.positions)) {
-          setDefaultPlaceholders();
+          // Проходим по всем сохранённым позициям
           data.positions.forEach((posData, index) => {
-            if (index < positionItems.length && posData.quantity > 0) {
+            if (index < positionItems.length) {
               const item = positionItems[index];
               const select = item.querySelector(".day-modal-select");
               const quantityInput = item.querySelector(".day-modal-quantity-input");
-              if (select && posData.positionId) select.value = posData.positionId;
-              if (quantityInput && posData.quantity) quantityInput.value = posData.quantity;
+
+              // Проверяем, что позиция существует в справочнике
+              const positionExists = positions.some((p) => p.id == posData.positionId);
+
+              if (select && quantityInput && positionExists && posData.quantity > 0) {
+                select.value = posData.positionId;
+                quantityInput.value = posData.quantity;
+              }
             }
           });
         }
       } catch (e) {
-        setDefaultPlaceholders();
+        console.warn("Ошибка загрузки данных дня:", e);
       }
-    } else {
-      setDefaultPlaceholders();
-      shiftStart.value = "07:00";
-      shiftEnd.value = "15:30";
     }
+
+    // Обновляем статистику и иконку типа смены
     updateStats();
     updateShiftTypeIcon();
   }
@@ -773,12 +785,18 @@
 
   function renderDayModalPositions() {
     const positionItems = document.querySelectorAll(".day-modal-position-item");
+
     positionItems.forEach((item) => {
       const select = item.querySelector(".day-modal-select");
       if (!select) return;
+
+      // Сохраняем текущее выбранное значение (если есть)
       const currentValue = select.value;
+
+      // Очищаем select
       select.innerHTML = "";
 
+      // Добавляем опцию-плейсхолдер
       const placeholderOption = document.createElement("option");
       placeholderOption.value = "";
       placeholderOption.textContent = "— Выберите —";
@@ -786,6 +804,7 @@
       placeholderOption.selected = true;
       select.appendChild(placeholderOption);
 
+      // Добавляем позиции из справочника
       positions.forEach((pos) => {
         const option = document.createElement("option");
         option.value = pos.id;
@@ -793,26 +812,33 @@
         select.appendChild(option);
       });
 
-      if (currentValue && currentValue !== "" && positions.some((p) => p.id == currentValue)) {
-        select.value = currentValue;
-      } else {
-        select.value = "";
-      }
+      // ВАЖНО: НЕ сбрасываем на плейсхолдер, если было сохранённое значение
+      // Значение установится позже в loadDayData
     });
   }
 
   function openDayModal(date) {
     if (!dayModal) return;
+
     const day = date.getDate();
     const month = date.getMonth();
     const year = date.getFullYear();
 
+    // Полная дата в заголовке
     dayModalDate.textContent = `${day} ${MONTH_NAMES_GENITIVE[month]} ${year}`;
-    const shortDateSpan = document.getElementById("dayModalDateShort");
-    if (shortDateSpan) shortDateSpan.textContent = `${day} ${MONTH_NAMES_GENITIVE[month]}`;
 
-    loadDayData(date);
+    // Короткая дата для статистики
+    const shortDateSpan = document.getElementById("dayModalDateShort");
+    if (shortDateSpan) {
+      shortDateSpan.textContent = `${day} ${MONTH_NAMES_GENITIVE[month]}`;
+    }
+
+    // ВАЖНО: Сначала обновляем выпадающие списки из справочника
     renderDayModalPositions();
+
+    // ПОТОМ загружаем сохранённые данные (они применятся к свежим селектам)
+    loadDayData(date);
+
     dayModal.classList.add("active");
     document.body.style.overflow = "hidden";
   }
@@ -1031,6 +1057,16 @@
     let totalEarned = 0;
     let totalMinutes = 0;
 
+    // Загружаем процент премии из настроек
+    let bonusPercent = 0;
+    const savedSettings = localStorage.getItem("settings");
+    if (savedSettings) {
+      try {
+        const settings = JSON.parse(savedSettings);
+        bonusPercent = settings.bonusPercent || 0;
+      } catch (e) {}
+    }
+
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     for (let day = 1; day <= daysInMonth; day++) {
       const dateKey = formatDateKey(year, month, day);
@@ -1051,8 +1087,15 @@
       }
     }
 
+    // Добавляем премию к общей сумме
+    if (bonusPercent > 0) {
+      totalEarned += Math.round(totalEarned * (bonusPercent / 100));
+    }
+
+    // Обновляем DOM — та же карточка, но сумма уже с премией
     const earnedSpan = document.querySelector(".stat-card--earned .stat-card__number");
     const hoursSpan = document.querySelector(".stat-card--hours .stat-card__number");
+
     if (earnedSpan) earnedSpan.textContent = totalEarned.toLocaleString();
     if (hoursSpan) hoursSpan.textContent = Math.floor(totalMinutes / 60);
   }
