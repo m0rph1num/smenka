@@ -3150,25 +3150,6 @@ body {
   color: var(--color-text-tertiary);
 }
 
-.settings-banner {
-  border-radius: 16px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform 0.2s ease;
-  width: 100%;
-  height: auto;
-  margin-top: 8px;
-  box-sizing: border-box;
-}
-
-.settings-banner img {
-  width: 100%;
-  height: auto;
-  display: block;
-  object-fit: cover;
-  border-radius: 16px;
-}
-
 /* ===== КНОПКА СКАЧИВАНИЯ ОТЧЁТА ===== */
 .summary-report-button {
   display: flex;

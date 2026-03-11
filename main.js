@@ -2323,9 +2323,6 @@
     updateFeedbackButtonState();
   }
 
-  const banner = document.querySelector(".settings-banner");
-  if (banner) banner.addEventListener("click", () => {});
-
   loadSettings();
 
   // ==========================================================================

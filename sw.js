@@ -1,7 +1,6 @@
-// sw.js — Service Worker для PWA Сменка
-const CACHE_NAME = "smenka-v1.0.1"; // Меняйте при каждом релизе
+// sw.js — Исправленная версия
+const CACHE_NAME = "smenka-v1.0.1";
 
-// Файлы для кеширования при установке
 const urlsToCache = [
   "./",
   "./index.html",
@@ -12,10 +11,8 @@ const urlsToCache = [
   "./images/icon-512.png",
   "./images/favicon-32x32.png",
   "./images/favicon-16x16.png",
-  "./images/banner.png",
 ];
 
-// Установка service worker
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -26,7 +23,6 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// Активация и удаление старых кешей
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -43,43 +39,31 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Стратегия: сначала сеть, потом кеш (для HTML)
+// ГЛАВНОЕ ИСПРАВЛЕНИЕ: Всегда сначала кэш, потом сеть
 self.addEventListener("fetch", (event) => {
-  if (event.request.mode === "navigate") {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const responseClone = response.clone();
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      // Если есть в кэше — возвращаем мгновенно
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+
+      // Нет в кэше — грузим из сети
+      return fetch(event.request).then((networkResponse) => {
+        // Кэшируем только если это наш файл (не API, не внешние скрипты)
+        if (networkResponse && networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseClone);
           });
-          return response;
-        })
-        .catch(() => caches.match(event.request)),
-    );
-    return;
-  }
-
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      if (response) {
-        return response;
-      }
-      return fetch(event.request).then((response) => {
-        if (!response || response.status !== 200 || response.type !== "basic") {
-          return response;
         }
-        const responseClone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseClone);
-        });
-        return response;
+        return networkResponse;
       });
     }),
   );
 });
 
-// Обработка сообщений от страницы
+// Обработка обновлений
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
