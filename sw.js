@@ -1,5 +1,5 @@
 // sw.js — Исправленная версия
-const CACHE_NAME = "smenka-v1.1.0";
+const CACHE_NAME = "smenka-v1.1.2";
 
 const urlsToCache = [
   "./",
