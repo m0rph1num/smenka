@@ -807,6 +807,7 @@
 
     positionItems.forEach((item) => {
       const select = item.querySelector(".day-modal-select");
+      const quantityInput = item.querySelector(".day-modal-quantity-input");
       if (!select) return;
 
       // Сохраняем текущее выбранное значение (если есть)
@@ -819,8 +820,7 @@
       const placeholderOption = document.createElement("option");
       placeholderOption.value = "";
       placeholderOption.textContent = "— Выберите —";
-      placeholderOption.disabled = true;
-      placeholderOption.selected = true;
+      placeholderOption.disabled = false; // теперь можно выбрать
       select.appendChild(placeholderOption);
 
       // Добавляем позиции из справочника
@@ -831,8 +831,30 @@
         select.appendChild(option);
       });
 
-      // ВАЖНО: НЕ сбрасываем на плейсхолдер, если было сохранённое значение
-      // Значение установится позже в loadDayData
+      // Восстанавливаем выбранное значение, если оно было
+      if (currentValue && currentValue !== "" && positions.some((p) => p.id == currentValue)) {
+        select.value = currentValue;
+      } else {
+        select.value = "";
+        // Если ничего не выбрано - очищаем количество
+        if (quantityInput) {
+          quantityInput.value = "0";
+        }
+      }
+
+      // Добавляем обработчик изменения
+      select.addEventListener("change", function (e) {
+        const item = this.closest(".day-modal-position-item");
+        const qtyInput = item.querySelector(".day-modal-quantity-input");
+
+        if (this.value === "") {
+          // Если выбрали плейсхолдер - очищаем количество
+          if (qtyInput) {
+            qtyInput.value = "0";
+          }
+        }
+        updateStats(); // пересчитываем итоги
+      });
     });
   }
 
