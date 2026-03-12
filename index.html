@@ -1976,85 +1976,11 @@
       // Регистрация Service Worker
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
-          navigator.serviceWorker
-            .register("sw.js")
-            .then((registration) => {
-              console.log("ServiceWorker зарегистрирован:", registration.scope);
-
-              // СЛЕДИМ ЗА ОБНОВЛЕНИЯМИ
-              registration.addEventListener("updatefound", () => {
-                const newWorker = registration.installing;
-                console.log("Найдено обновление ServiceWorker");
-
-                newWorker.addEventListener("statechange", () => {
-                  if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-                    // Новая версия установлена, показываем уведомление
-                    showUpdateNotification();
-                  }
-                });
-              });
-            })
-            .catch((error) => {
-              console.log("Ошибка регистрации ServiceWorker:", error);
-            });
+          navigator.serviceWorker.register("sw.js").catch((error) => {
+            console.log("Ошибка регистрации ServiceWorker:", error);
+          });
         });
       }
-
-      // Функция показа уведомления об обновлении
-      function showUpdateNotification() {
-        // Создаём красивое уведомление
-        const notification = document.createElement("div");
-        notification.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      left: 20px;
-      right: 20px;
-      background: var(--color-bg-secondary);
-      border: 1px solid var(--color-accent-primary);
-      border-radius: 16px;
-      padding: 16px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-      z-index: 10000;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      animation: slideUp 0.3s ease;
-    `;
-
-        notification.innerHTML = `
-      <div style="color: var(--color-text-primary); font-size: 14px;">
-        ✨ Доступна новая версия приложения
-      </div>
-      <button id="updateBtn" style="
-        background: var(--color-accent-primary);
-        border: none;
-        border-radius: 12px;
-        padding: 8px 16px;
-        color: white;
-        font-weight: 500;
-        cursor: pointer;
-      ">Обновить</button>
-    `;
-
-        document.body.appendChild(notification);
-
-        document.getElementById("updateBtn").addEventListener("click", () => {
-          // Отправляем сообщение новому service worker'у на обновление
-          navigator.serviceWorker.controller.postMessage({ type: "SKIP_WAITING" });
-          notification.remove();
-        });
-
-        // Автоматически скрываем через 30 секунд
-        setTimeout(() => notification.remove(), 30000);
-      }
-
-      // Слушаем сообщения от service worker
-      navigator.serviceWorker.addEventListener("message", (event) => {
-        if (event.data.type === "UPDATED") {
-          window.location.reload();
-        }
-      });
     </script>
   </body>
 </html>
