@@ -2461,6 +2461,24 @@ body {
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
 }
 
+.summary-position-item.focused {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: -2px;
+  background-color: var(--color-bg-tertiary);
+}
+
+.summary-position-item.focused .summary-position-name {
+  overflow-x: auto;
+  white-space: nowrap;
+  text-overflow: clip;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* для Firefox */
+}
+
+.summary-position-item.focused .summary-position-name::-webkit-scrollbar {
+  display: none; /* скрываем скроллбар */
+}
+
 /* Левая группа */
 .summary-position-left {
   display: flex;
@@ -3157,13 +3175,12 @@ body {
   justify-content: center;
   gap: 8px;
   width: 100%;
-  padding: 16px;
+  padding: 14px;
   margin-top: 16px;
-  background-color: var(--color-accent-primary);
-  border: none;
+  background-color: var(--color-bg-tertiary);
   border-radius: 16px;
-  color: var(--color-text-primary);
-  font-size: 16px;
+  color: var(--color-text-secondary);
+  font-size: 15px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -3171,7 +3188,9 @@ body {
 }
 
 .summary-report-button:hover {
-  background-color: var(--color-accent-hover);
+  background-color: var(--color-accent-muted);
+  color: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
   transform: translateY(-2px);
 }
 
@@ -3180,8 +3199,8 @@ body {
 }
 
 .summary-report-button svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   stroke: currentColor;
 }
 
@@ -3217,4 +3236,59 @@ body {
 .day-modal-select.error {
   border-color: var(--color-semantic-error) !important;
   background-color: rgba(207, 111, 111, 0.1);
+}
+
+/* ===== ЗОНА ВОССТАНОВЛЕНИЯ ===== */
+.settings-restore-zone {
+  margin-top: 24px;
+  padding: 16px;
+  background-color: rgba(109, 159, 113, 0.05);
+  border: 1px solid rgba(109, 159, 113, 0.2);
+  border-radius: 16px;
+}
+
+.settings-restore-zone .settings-block-title {
+  color: var(--color-accent-primary);
+  margin-bottom: 12px;
+}
+
+.restore-zone-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.restore-zone-description {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.restore-zone-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px;
+  background-color: rgba(109, 159, 113, 0.1);
+  border: 1px solid var(--color-accent-primary);
+  border-radius: 12px;
+  color: var(--color-accent-primary);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.restore-zone-button:hover {
+  background-color: var(--color-accent-primary);
+  color: #ffffff;
+}
+
+.restore-zone-button svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
 }

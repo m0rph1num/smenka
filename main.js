@@ -83,7 +83,7 @@
   // ==========================================================================
   // 4.1 ВЕРСИЯ ПРИЛОЖЕНИЯ
   // ==========================================================================
-  const APP_VERSION = "1.0.3";
+  const APP_VERSION = "1.1.0";
 
   // ==========================================================================
   // 5. СОСТОЯНИЕ ПРИЛОЖЕНИЯ
@@ -114,7 +114,7 @@
   }
 
   function formatDateKey(year, month, day) {
-    return `${year}-${month}-${day}`;
+    return `${year}-${month + 1}-${day}`; // +1 чтобы месяц был 1-12
   }
 
   function isDayFilled(year, month, day) {
@@ -130,6 +130,15 @@
     } catch (e) {
       return false;
     }
+  }
+
+  // ==========================================================================
+  // 6.1 ФОРМАТИРОВАНИЕ СУММ (БЕЗ КОПЕЕК)
+  // ==========================================================================
+
+  function formatAmount(amount) {
+    if (amount === undefined || amount === null) return "0";
+    return Math.round(amount).toLocaleString("ru-RU");
   }
 
   // ==========================================================================
@@ -544,7 +553,7 @@
       if (quantity > 0) {
         const price = getPositionPrice(select.value);
         const earned = price * quantity;
-        earnedSpan.textContent = `${earned.toLocaleString()} ₽`;
+        earnedSpan.textContent = `${formatAmount(earned)} ₽`;
         total += earned;
       } else {
         earnedSpan.textContent = "0 ₽";
@@ -579,7 +588,7 @@
   function updateStats() {
     const totalEarned = calculateTotalEarned();
     const totalEarnedSpan = document.getElementById("totalEarnedValue");
-    if (totalEarnedSpan) totalEarnedSpan.textContent = `${totalEarned.toLocaleString()} ₽`;
+    if (totalEarnedSpan) totalEarnedSpan.textContent = `${formatAmount(totalEarned)} ₽`;
 
     const workedTime = calculateWorkedTime(shiftStart.value, shiftEnd.value);
     const totalHoursSpan = document.getElementById("totalHoursValue");
@@ -622,7 +631,13 @@
     const saved = localStorage.getItem(dateKey);
     const positionItems = document.querySelectorAll(".day-modal-position-item");
 
-    // Устанавливаем время (всегда, даже если нет сохранённых данных)
+    // 1. СНАЧАЛА СБРАСЫВАЕМ ВСЁ В 0
+    positionItems.forEach((item) => {
+      const quantityInput = item.querySelector(".day-modal-quantity-input");
+      if (quantityInput) quantityInput.value = "0";
+    });
+
+    // 2. Устанавливаем время по умолчанию
     shiftStart.value = "07:00";
     shiftEnd.value = "15:30";
 
@@ -636,14 +651,11 @@
 
         // Заполняем позиции
         if (data.positions && Array.isArray(data.positions)) {
-          // Проходим по всем сохранённым позициям
           data.positions.forEach((posData, index) => {
             if (index < positionItems.length) {
               const item = positionItems[index];
               const select = item.querySelector(".day-modal-select");
               const quantityInput = item.querySelector(".day-modal-quantity-input");
-
-              // Проверяем, что позиция существует в справочнике
               const positionExists = positions.some((p) => p.id == posData.positionId);
 
               if (select && quantityInput && positionExists && posData.quantity > 0) {
@@ -658,7 +670,6 @@
       }
     }
 
-    // Обновляем статистику и иконку типа смены
     updateStats();
     updateShiftTypeIcon();
   }
@@ -710,6 +721,7 @@
       startTime: shiftStart.value || "",
       endTime: shiftEnd.value || "",
       positions,
+      _synced: 0, // 0 = не синхронизировано
     };
 
     localStorage.setItem(dateKey, JSON.stringify(data));
@@ -717,6 +729,13 @@
     updateMainStats();
     renderCalendar();
     closeDayModal();
+
+    if (navigator.onLine) {
+      syncAllData(); // сразу отправляем в облако
+    } else {
+      // Если нет интернета, данные уже в pendingQueue
+      console.log("Данные сохранены локально, отправятся при появлении сети");
+    }
   }
 
   function deleteDayData() {
@@ -824,19 +843,16 @@
     const month = date.getMonth();
     const year = date.getFullYear();
 
-    // Полная дата в заголовке
     dayModalDate.textContent = `${day} ${MONTH_NAMES_GENITIVE[month]} ${year}`;
-
-    // Короткая дата для статистики
     const shortDateSpan = document.getElementById("dayModalDateShort");
     if (shortDateSpan) {
       shortDateSpan.textContent = `${day} ${MONTH_NAMES_GENITIVE[month]}`;
     }
 
-    // ВАЖНО: Сначала обновляем выпадающие списки из справочника
+    // ВАЖНО: Сначала строим селекты
     renderDayModalPositions();
 
-    // ПОТОМ загружаем сохранённые данные (они применятся к свежим селектам)
+    // ПОТОМ загружаем данные (внутри loadDayData теперь есть сброс количества)
     loadDayData(date);
 
     dayModal.classList.add("active");
@@ -975,7 +991,7 @@
               (sum, pos) => sum + (getPositionPrice(pos.positionId) || 0) * (pos.quantity || 0),
               0,
             ) || 0;
-          contextTotalEarned.textContent = `${total.toLocaleString()} ₽`;
+          contextTotalEarned.textContent = `${formatAmount(total)} ₽`;
         }
         if (contextTotalHours) {
           const workedTime = calculateWorkedTime(data.startTime, data.endTime);
@@ -1020,14 +1036,14 @@
       const earned = price * pos.quantity;
       const positionName = getPositionName(pos.positionId);
       html += `
-        <div class="day-context-position-item">
-          <div class="day-context-position-info">
-            <span class="day-context-position-name">${positionName}</span>
-          </div>
-          <span class="day-context-position-quantity">×${pos.quantity}</span>
-          <span class="day-context-position-earned">${earned.toLocaleString()} ₽</span>
-        </div>
-      `;
+  <div class="day-context-position-item">
+    <div class="day-context-position-info">
+      <span class="day-context-position-name">${positionName}</span>
+    </div>
+    <span class="day-context-position-quantity">×${pos.quantity}</span>
+    <span class="day-context-position-earned">${formatAmount(earned)} ₽</span>
+  </div>
+`;
     });
     contextPositionsList.innerHTML = html;
   }
@@ -1063,7 +1079,7 @@
     if (savedSettings) {
       try {
         const settings = JSON.parse(savedSettings);
-        bonusPercent = settings.bonusPercent || 0;
+        bonusPercent = parseFloat(settings.bonusPercent) || 0; // parseFloat для дробных процентов
       } catch (e) {}
     }
 
@@ -1087,16 +1103,19 @@
       }
     }
 
+    // Сохраняем исходную сумму для расчёта премии
+    const baseEarned = totalEarned;
+
     // Добавляем премию к общей сумме
     if (bonusPercent > 0) {
-      totalEarned += Math.round(totalEarned * (bonusPercent / 100));
+      totalEarned = baseEarned + Math.round(baseEarned * (bonusPercent / 100));
     }
 
-    // Обновляем DOM — та же карточка, но сумма уже с премией
+    // Обновляем DOM — используем formatAmount для скрытия копеек
     const earnedSpan = document.querySelector(".stat-card--earned .stat-card__number");
     const hoursSpan = document.querySelector(".stat-card--hours .stat-card__number");
 
-    if (earnedSpan) earnedSpan.textContent = totalEarned.toLocaleString();
+    if (earnedSpan) earnedSpan.textContent = formatAmount(totalEarned);
     if (hoursSpan) hoursSpan.textContent = Math.floor(totalMinutes / 60);
   }
 
@@ -1486,10 +1505,13 @@
   function handleTabClick(e) {
     const tab = e.currentTarget;
     if (tab.disabled) return;
+
     const period = tab.dataset.period;
-    if (period === summaryPeriod) return;
-    if (period === "week") openWeekPicker();
-    else {
+
+    // Если кликнули на активную неделю — всё равно открываем выбор
+    if (period === "week") {
+      openWeekPicker();
+    } else {
       summaryPeriod = period;
       updateSummaryPage();
     }
@@ -1500,6 +1522,17 @@
       tab.removeEventListener("click", handleTabClick);
       tab.addEventListener("click", handleTabClick);
     });
+
+    // Ищем кнопку при каждом вызове (на случай, если страница ещё не загружена)
+    const downloadBtn = document.getElementById("downloadPdfBtn");
+    if (downloadBtn) {
+      // Удаляем старый обработчик, чтобы не было дублей
+      downloadBtn.removeEventListener("click", generatePDFReport);
+      downloadBtn.addEventListener("click", generatePDFReport);
+      console.log("Обработчик PDF отчёта добавлен");
+    } else {
+      console.warn("Кнопка downloadPdfBtn не найдена в DOM");
+    }
   }
 
   function updateSummaryData() {
@@ -1549,11 +1582,11 @@
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    if (summaryTotalEarned) summaryTotalEarned.textContent = totalEarned.toLocaleString();
+    if (summaryTotalEarned) summaryTotalEarned.textContent = formatAmount(totalEarned);
     if (summaryTotalBonus) {
       if (bonusPercent > 0) {
         const bonus = Math.round(totalEarned * (bonusPercent / 100));
-        summaryTotalBonus.textContent = bonus.toLocaleString();
+        summaryTotalBonus.textContent = formatAmount(bonus);
       } else summaryTotalBonus.textContent = "0";
     }
     if (summaryTotalHours) summaryTotalHours.textContent = Math.floor(totalMinutes / 60).toString();
@@ -1612,7 +1645,7 @@
           </div>
           <div class="summary-position-right">
             <span class="summary-position-quantity">×${pos.quantity.toLocaleString()}</span>
-            <span class="summary-position-earned">${pos.earned.toLocaleString()} ₽</span>
+            <span class="summary-position-earned">${formatAmount(pos.earned)} ₽</span>
           </div>
         </div>
       `;
@@ -1873,7 +1906,9 @@
             borderWidth: 1,
             padding: 10,
             cornerRadius: 8,
-            callbacks: { label: (ctx) => `${ctx.raw.toLocaleString()} ₽` },
+            callbacks: {
+              label: (ctx) => `${Math.round(ctx.raw).toLocaleString("ru-RU")} ₽`,
+            },
           },
         },
         scales: {
@@ -2180,6 +2215,14 @@
     savePositions();
     renderReferenceList();
     closePositionModal();
+
+    // ✅ ОТПРАВЛЯЕМ В ОБЛАКО
+    if (navigator.onLine) {
+      syncAllData();
+    } else {
+      // Если нет интернета, данные уже в pendingQueue
+      console.log("Позиции сохранены локально, отправятся при появлении сети");
+    }
   }
 
   function deletePosition() {
@@ -2307,6 +2350,11 @@
     textSpan.style.display = "block";
     animateSave(element);
     vibrate(20);
+
+    // ✅ ОТПРАВЛЯЕМ НАСТРОЙКИ В ОБЛАКО
+    if (navigator.onLine) {
+      syncAllData();
+    }
   }
 
   function updateFeedbackButtonState() {
@@ -2410,6 +2458,7 @@
         if (summaryPage) {
           summaryPage.style.display = "flex";
           updateSummaryPage();
+          initSummaryTabs(); // <-- ПЕРЕИНИЦИАЛИЗИРУЕМ ПРИ КАЖДОМ ПЕРЕКЛЮЧЕНИИ
           if (appMain) appMain.classList.add("app-main--summary");
           if (monthElement) {
             const year = summaryCurrentDate.getFullYear();
@@ -2465,4 +2514,1696 @@
     }
     closeModal();
   }
+
+  // ==========================================================================
+  // 23. ГЕНЕРАЦИЯ PDF ОТЧЁТА (ДЕТАЛИЗИРОВАННЫЙ, ОФИЦИАЛЬНЫЙ)
+  // ==========================================================================
+
+  function generatePDFReport() {
+    console.log("Генерация PDF отчёта...");
+    const period = summaryPeriod;
+    const startEnd = getSummaryDateRange();
+    const start = startEnd.start;
+    const end = startEnd.end;
+
+    // Форматируем период
+    let periodTitle = "";
+    if (period === "week") {
+      periodTitle = `${start.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })} – ${end.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}`;
+    } else if (period === "month") {
+      periodTitle = start.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+    } else {
+      periodTitle = start.getFullYear().toString();
+    }
+
+    // Дата формирования отчёта
+    const reportDate = new Date().toLocaleDateString("ru-RU", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // --- СБОР ДАННЫХ ПО ДНЯМ ---
+    const daysData = [];
+    const positionsMap = new Map(); // для сводной таблицы позиций
+
+    let totalEarned = 0;
+    let totalMinutes = 0;
+
+    let currentDate = new Date(start);
+    while (currentDate <= end) {
+      const dateKey = formatDateKey(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+      const saved = localStorage.getItem(dateKey);
+
+      const dayInfo = {
+        date: new Date(currentDate),
+        dateStr: currentDate.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }),
+        weekday: currentDate.toLocaleDateString("ru-RU", { weekday: "short" }),
+        startTime: "",
+        endTime: "",
+        hoursWorked: 0,
+        minutesWorked: 0,
+        earned: 0,
+        positions: [],
+      };
+
+      if (saved) {
+        try {
+          const data = JSON.parse(saved);
+
+          // Проверяем, есть ли позиции с количеством > 0
+          const hasPositions =
+            data.positions && data.positions.length > 0 && data.positions.some((p) => p.quantity > 0);
+
+          // Если позиций нет — пропускаем день (не считаем заполненным)
+          if (!hasPositions) {
+            dayInfo.startTime = "—";
+            dayInfo.endTime = "—";
+            daysData.push(dayInfo);
+            currentDate.setDate(currentDate.getDate() + 1);
+            continue; // <--- ИСПРАВЛЕНО: continue вместо return
+          }
+
+          dayInfo.startTime = data.startTime || "—";
+          dayInfo.endTime = data.endTime || "—";
+
+          if (data.startTime && data.endTime) {
+            const worked = calculateWorkedTime(data.startTime, data.endTime);
+            dayInfo.hoursWorked = worked.hours;
+            dayInfo.minutesWorked = worked.minutes;
+            totalMinutes += worked.hours * 60 + worked.minutes;
+          }
+
+          if (data.positions && data.positions.length > 0) {
+            data.positions.forEach((pos) => {
+              if (pos.quantity > 0) {
+                // учитываем только позиции с количеством
+                const id = pos.positionId;
+                const qty = pos.quantity || 0;
+                const price = getPositionPrice(id) || 0;
+                const earned = price * qty;
+
+                dayInfo.earned += earned;
+                dayInfo.positions.push({
+                  name: getPositionName(id),
+                  quantity: qty,
+                  earned: earned,
+                });
+
+                // Для сводной таблицы позиций
+                if (positionsMap.has(id)) {
+                  const existing = positionsMap.get(id);
+                  existing.quantity += qty;
+                  existing.earned += earned;
+                } else {
+                  positionsMap.set(id, {
+                    name: getPositionName(id),
+                    quantity: qty,
+                    earned: earned,
+                  });
+                }
+              }
+            });
+          }
+          totalEarned += dayInfo.earned;
+        } catch (e) {}
+      } else {
+        dayInfo.startTime = "—";
+        dayInfo.endTime = "—";
+      }
+
+      daysData.push(dayInfo);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // --- РАСЧЁТ ДОПОЛНИТЕЛЬНЫХ ПОКАЗАТЕЛЕЙ ---
+    let bonusPercent = 0;
+    let teamSize = 1;
+    const savedSettings = localStorage.getItem("settings");
+    if (savedSettings) {
+      try {
+        const settings = JSON.parse(savedSettings);
+        bonusPercent = settings.bonusPercent || 0;
+        teamSize = settings.teamSize || 1;
+      } catch (e) {}
+    }
+
+    const bonusAmount = Math.round(totalEarned * (bonusPercent / 100));
+    const totalWithBonus = totalEarned + bonusAmount;
+    const perPerson = Math.round(totalWithBonus / teamSize);
+
+    const totalHours = Math.floor(totalMinutes / 60);
+    const totalMinutesRemain = totalMinutes % 60;
+    const totalHoursStr = totalMinutesRemain > 0 ? `${totalHours} ч ${totalMinutesRemain} мин` : `${totalHours} ч`;
+
+    // --- ДОПОЛНИТЕЛЬНЫЕ ПОКАЗАТЕЛИ (ПУНКТ 1) ---
+    const daysWithData = daysData.filter((day) => day.earned > 0).length;
+    const avgPerDay = daysWithData > 0 ? Math.round(totalEarned / daysWithData) : 0;
+
+    // --- ДАННЫЕ ЗА ПРОШЛЫЙ ПЕРИОД ДЛЯ СРАВНЕНИЯ (ПУНКТ 5) ---
+    let prevPeriodTotal = 0;
+    let prevPeriodDays = 0;
+
+    let prevStart, prevEnd;
+    if (period === "week") {
+      prevStart = new Date(start);
+      prevStart.setDate(prevStart.getDate() - 7);
+      prevEnd = new Date(end);
+      prevEnd.setDate(prevEnd.getDate() - 7);
+    } else if (period === "month") {
+      prevStart = new Date(start.getFullYear(), start.getMonth() - 1, 1);
+      prevEnd = new Date(start.getFullYear(), start.getMonth(), 0);
+    } else {
+      // year
+      prevStart = new Date(start.getFullYear() - 1, 0, 1);
+      prevEnd = new Date(start.getFullYear() - 1, 11, 31);
+    }
+
+    let prevCurrentDate = new Date(prevStart);
+    while (prevCurrentDate <= prevEnd) {
+      const dateKey = formatDateKey(
+        prevCurrentDate.getFullYear(),
+        prevCurrentDate.getMonth(),
+        prevCurrentDate.getDate(),
+      );
+      const saved = localStorage.getItem(dateKey);
+      if (saved) {
+        try {
+          const data = JSON.parse(saved);
+          if (data.positions) {
+            data.positions.forEach((pos) => {
+              const price = getPositionPrice(pos.positionId) || 0;
+              prevPeriodTotal += price * (pos.quantity || 0);
+            });
+          }
+          if (data.positions && data.positions.length > 0) prevPeriodDays++;
+        } catch (e) {}
+      }
+      prevCurrentDate.setDate(prevCurrentDate.getDate() + 1);
+    }
+
+    let dynamicPercent = 0;
+    let dynamicText = "—";
+    if (prevPeriodTotal > 0) {
+      dynamicPercent = Math.round(((totalEarned - prevPeriodTotal) / prevPeriodTotal) * 100);
+
+      // Ограничиваем отображение, чтобы не было космических цифр
+      if (dynamicPercent > 500) {
+        dynamicText = "> 500%";
+      } else if (dynamicPercent < -500) {
+        dynamicText = "< -500%";
+      } else {
+        dynamicText = dynamicPercent > 0 ? `+${dynamicPercent}%` : `${dynamicPercent}%`;
+      }
+    } else if (totalEarned > 0) {
+      dynamicText = "новый период"; // было 0, стало > 0
+    } else {
+      dynamicText = "—";
+    }
+
+    // --- ПОСТРОЕНИЕ ТАБЛИЦЫ ДНЕЙ ---
+    const daysTableBody = [
+      [
+        { text: "Дата", style: "tableHeader" },
+        { text: "Начало", style: "tableHeaderCenter" },
+        { text: "Конец", style: "tableHeaderCenter" },
+        { text: "Часы", style: "tableHeaderCenter" },
+        { text: "Сумма (₽)", style: "tableHeaderRight" },
+      ],
+    ];
+
+    daysData.forEach((day) => {
+      if (day.earned > 0 || day.startTime !== "—") {
+        daysTableBody.push([
+          { text: `${day.dateStr}, ${day.weekday}`, style: "tableCell" },
+          { text: day.startTime, style: "tableCellCenter" },
+          { text: day.endTime, style: "tableCellCenter" },
+          {
+            text: day.hoursWorked > 0 ? `${day.hoursWorked}:${day.minutesWorked.toString().padStart(2, "0")}` : "—",
+            style: "tableCellCenter",
+          },
+          { text: day.earned > 0 ? Math.round(day.earned).toLocaleString("ru-RU") : "—", style: "tableCellRight" },
+        ]);
+      }
+    });
+
+    // Если нет дней с данными, добавляем заглушку
+    if (daysTableBody.length === 1) {
+      daysTableBody.push([
+        { text: "Нет данных за выбранный период", colSpan: 5, alignment: "center", style: "emptyCell" },
+        {},
+        {},
+        {},
+        {},
+      ]);
+    }
+
+    // --- ПОСТРОЕНИЕ СВОДНОЙ ТАБЛИЦЫ ПОЗИЦИЙ ---
+    const positionsTableBody = [
+      [
+        { text: "Наименование позиции", style: "tableHeader" },
+        { text: "Количество", style: "tableHeaderCenter" },
+        { text: "Сумма (₽)", style: "tableHeaderRight" },
+      ],
+    ];
+
+    positionsMap.forEach((pos) => {
+      positionsTableBody.push([
+        { text: pos.name, style: "tableCell" },
+        { text: pos.quantity.toString(), style: "tableCellCenter" },
+        { text: Math.round(pos.earned).toLocaleString("ru-RU"), style: "tableCellRight" },
+      ]);
+    });
+
+    if (positionsMap.size === 0) {
+      positionsTableBody.push([{ text: "Нет данных", colSpan: 3, alignment: "center", style: "emptyCell" }, {}, {}]);
+    }
+
+    // --- СОЗДАНИЕ PDF ДОКУМЕНТА ---
+    const docDefinition = {
+      pageSize: "A4",
+      pageMargins: [40, 90, 40, 70],
+
+      // Верхний колонтитул
+      header: {
+        columns: [
+          {
+            width: 120,
+            text: "СМЕНКА",
+            fontSize: 18,
+            bold: true,
+            color: "#6d9f71",
+            margin: [40, 20, 0, 0],
+          },
+          {
+            width: "*",
+            text: "ОТЧЁТ О ВЫПОЛНЕННЫХ РАБОТАХ",
+            fontSize: 14,
+            color: "#333",
+            bold: true,
+            alignment: "center",
+            margin: [0, 22, 0, 0],
+          },
+          {
+            width: 120,
+            text: `от ${new Date().toLocaleDateString("ru-RU")}`,
+            fontSize: 10,
+            color: "#999",
+            alignment: "right",
+            margin: [0, 24, 40, 0],
+          },
+        ],
+      },
+
+      // Нижний колонтитул
+      footer: function (currentPage, pageCount) {
+        return {
+          columns: [
+            {
+              text: `Сформировано: ${reportDate}`,
+              alignment: "left",
+              margin: [40, 0, 0, 20],
+              fontSize: 8,
+              color: "#999",
+            },
+            {
+              text: `стр. ${currentPage} из ${pageCount}`,
+              alignment: "right",
+              margin: [0, 0, 40, 20],
+              fontSize: 8,
+              color: "#999",
+            },
+          ],
+        };
+      },
+
+      content: [
+        // --- КАРТОЧКИ ИТОГОВ (таблица 2×2) ---
+        {
+          style: "summaryTable",
+          table: {
+            widths: ["*", "*"],
+            body: [
+              [
+                {
+                  stack: [
+                    { text: "ИТОГО ЗА ПЕРИОД", style: "summaryCardLabel" },
+                    { text: `${Math.round(totalEarned).toLocaleString("ru-RU")} ₽`, style: "summaryCardValue" },
+                  ],
+                  style: "summaryCard",
+                },
+                {
+                  stack: [
+                    { text: `ПРЕМИЯ (${bonusPercent}%)`, style: "summaryCardLabel" },
+                    { text: `${Math.round(bonusAmount).toLocaleString("ru-RU")} ₽`, style: "summaryCardValue" },
+                  ],
+                  style: "summaryCard",
+                },
+              ],
+              [
+                {
+                  stack: [
+                    { text: "ИТОГО С ПРЕМИЕЙ", style: "summaryCardLabel" },
+                    { text: `${Math.round(totalWithBonus).toLocaleString("ru-RU")} ₽`, style: "summaryCardValueGreen" },
+                  ],
+                  style: "summaryCard",
+                },
+                {
+                  stack: [
+                    { text: `НА 1 ЧЕЛОВЕКА`, style: "summaryCardLabel" },
+                    { text: `${Math.round(perPerson).toLocaleString("ru-RU")} ₽`, style: "summaryCardValueGreen" },
+                  ],
+                  style: "summaryCard",
+                },
+              ],
+            ],
+          },
+          layout: {
+            fillColor: "#ffffff",
+            hLineWidth: function () {
+              return 1;
+            },
+            vLineWidth: function () {
+              return 1;
+            },
+            hLineColor: "#e0e0e0",
+            vLineColor: "#e0e0e0",
+            paddingLeft: function () {
+              return 15;
+            },
+            paddingRight: function () {
+              return 15;
+            },
+            paddingTop: function () {
+              return 15;
+            },
+            paddingBottom: function () {
+              return 15;
+            },
+          },
+        },
+
+        // --- ДОПОЛНИТЕЛЬНАЯ СТАТИСТИКА (ПУНКТЫ 1 и 5) ---
+        {
+          style: "statsRow",
+          columns: [
+            {
+              width: "*",
+              stack: [
+                { text: "ОТРАБОТАНО СМЕН", style: "statsLabel" },
+                { text: daysWithData.toString(), style: "statsNumber" },
+              ],
+              style: "statsItem",
+            },
+            {
+              width: "*",
+              stack: [
+                { text: "СР. ДОХОД ЗА СМЕНУ", style: "statsLabel" },
+                { text: avgPerDay > 0 ? `${avgPerDay.toLocaleString("ru-RU")} ₽` : "0 ₽", style: "statsNumber" },
+              ],
+              style: "statsItem",
+            },
+            {
+              width: "*",
+              stack: [
+                { text: "К ПРОШЛОМУ ПЕРИОДУ", style: "statsLabel" },
+                { text: dynamicText, style: dynamicPercent >= 0 ? "statsNumberGreen" : "statsNumberRed" },
+              ],
+              style: "statsItem",
+            },
+          ],
+        },
+
+        // Разделитель
+        {
+          canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 2, lineColor: "#6d9f71" }],
+          margin: [0, 25, 0, 20],
+        },
+
+        // --- ДЕТАЛИЗАЦИЯ ПО ДНЯМ ---
+        { text: "ПОДЕТАЛЬНЫЙ УЧЁТ СМЕН", style: "sectionTitle" },
+        { text: periodTitle, style: "sectionSubtitle" },
+
+        {
+          style: "mainTable",
+          table: {
+            headerRows: 1,
+            widths: ["*", 45, 45, 45, 65],
+            body: daysTableBody,
+          },
+          layout: {
+            fillColor: function (rowIndex) {
+              return rowIndex === 0 ? "#f0f7f0" : rowIndex % 2 === 0 ? "#fafafa" : null;
+            },
+            hLineWidth: function (i, node) {
+              return i === 0 || i === node.table.body.length ? 1 : 0.5;
+            },
+            vLineWidth: function () {
+              return 0.5;
+            },
+            hLineColor: "#ccc",
+            vLineColor: "#ccc",
+            paddingLeft: function () {
+              return 6;
+            },
+            paddingRight: function () {
+              return 6;
+            },
+            paddingTop: function () {
+              return 8;
+            },
+            paddingBottom: function () {
+              return 8;
+            },
+          },
+        },
+
+        // Итог по дням
+        {
+          style: "dailyTotal",
+          columns: [
+            { width: "*", text: "" },
+            {
+              width: "auto",
+              stack: [
+                { text: "ВСЕГО ЗА ПЕРИОД", style: "dailyTotalLabel" },
+                { text: `${Math.round(totalEarned).toLocaleString("ru-RU")} ₽`, style: "dailyTotalValue" },
+              ],
+            },
+          ],
+        },
+
+        // --- СВОДКА ПО ПОЗИЦИЯМ ---
+        { text: "СВОДКА ПО ВИДАМ РАБОТ", style: "sectionTitle", margin: [0, 25, 0, 10] },
+
+        {
+          style: "mainTable",
+          table: {
+            headerRows: 1,
+            widths: ["*", 55, 70],
+            body: positionsTableBody,
+          },
+          layout: {
+            fillColor: function (rowIndex) {
+              return rowIndex === 0 ? "#f0f7f0" : rowIndex % 2 === 0 ? "#fafafa" : null;
+            },
+            hLineWidth: function (i, node) {
+              return i === 0 || i === node.table.body.length ? 1 : 0.5;
+            },
+            vLineWidth: function () {
+              return 0.5;
+            },
+            hLineColor: "#ccc",
+            vLineColor: "#ccc",
+            paddingLeft: function () {
+              return 8;
+            },
+            paddingRight: function () {
+              return 8;
+            },
+            paddingTop: function () {
+              return 8;
+            },
+            paddingBottom: function () {
+              return 8;
+            },
+          },
+        },
+
+        // --- ОБЩИЙ ИТОГ ---
+        {
+          style: "grandTotal",
+          columns: [
+            { width: "*", text: "" },
+            {
+              width: "auto",
+              stack: [
+                { text: "ИТОГОВАЯ СУММА К ВЫПЛАТЕ", style: "grandTotalLabel" },
+                { text: `${Math.round(totalWithBonus).toLocaleString("ru-RU")} ₽`, style: "grandTotalValue" },
+              ],
+            },
+          ],
+        },
+
+        // Информационная строка
+        {
+          text: `Отработано всего: ${totalHoursStr} · Премия начислена в размере ${bonusPercent}% от основной суммы`,
+          style: "infoLine",
+          margin: [0, 15, 0, 0],
+        },
+      ],
+
+      styles: {
+        sectionTitle: {
+          fontSize: 16,
+          bold: true,
+          color: "#6d9f71",
+          margin: [0, 15, 0, 5],
+        },
+        sectionSubtitle: {
+          fontSize: 12,
+          color: "#666",
+          margin: [0, 0, 0, 15],
+        },
+        summaryCard: {
+          alignment: "center",
+        },
+        summaryCardLabel: {
+          fontSize: 10,
+          color: "#999",
+          margin: [0, 0, 0, 6],
+        },
+        summaryCardValue: {
+          fontSize: 18,
+          bold: true,
+          color: "#333",
+        },
+        summaryCardValueGreen: {
+          fontSize: 18,
+          bold: true,
+          color: "#6d9f71",
+        },
+        statsRow: {
+          margin: [0, 10, 0, 20],
+          columnGap: 10,
+        },
+        statsItem: {
+          alignment: "center",
+          fillColor: "#f9f9f9",
+          border: [true, true, true, true],
+          borderColor: "#e0e0e0",
+          borderWidth: 1,
+          borderRadius: 8,
+          padding: [10, 8, 10, 8],
+        },
+        statsLabel: {
+          fontSize: 8,
+          color: "#999",
+          margin: [0, 0, 0, 4],
+        },
+        statsNumber: {
+          fontSize: 14,
+          bold: true,
+          color: "#333",
+        },
+        statsNumberGreen: {
+          fontSize: 14,
+          bold: true,
+          color: "#6d9f71",
+        },
+        statsNumberRed: {
+          fontSize: 14,
+          bold: true,
+          color: "#cf6f6f",
+        },
+        tableHeader: {
+          bold: true,
+          fontSize: 10,
+          color: "#2a3f2c",
+        },
+        tableHeaderCenter: {
+          bold: true,
+          fontSize: 10,
+          color: "#2a3f2c",
+          alignment: "center",
+        },
+        tableHeaderRight: {
+          bold: true,
+          fontSize: 10,
+          color: "#2a3f2c",
+          alignment: "right",
+        },
+        tableCell: {
+          fontSize: 9,
+          color: "#333",
+        },
+        tableCellCenter: {
+          fontSize: 9,
+          color: "#333",
+          alignment: "center",
+        },
+        tableCellRight: {
+          fontSize: 9,
+          color: "#333",
+          alignment: "right",
+        },
+        emptyCell: {
+          fontSize: 10,
+          color: "#999",
+          margin: [0, 15, 0, 15],
+        },
+        dailyTotal: {
+          margin: [0, 10, 0, 5],
+        },
+        dailyTotalLabel: {
+          fontSize: 10,
+          color: "#666",
+          alignment: "right",
+        },
+        dailyTotalValue: {
+          fontSize: 14,
+          bold: true,
+          color: "#6d9f71",
+          alignment: "right",
+          margin: [0, 3, 0, 0],
+        },
+        grandTotal: {
+          margin: [0, 20, 0, 0],
+        },
+        grandTotalLabel: {
+          fontSize: 12,
+          color: "#666",
+          alignment: "right",
+        },
+        grandTotalValue: {
+          fontSize: 22,
+          bold: true,
+          color: "#6d9f71",
+          alignment: "right",
+          margin: [0, 5, 0, 0],
+        },
+        infoLine: {
+          fontSize: 8,
+          color: "#aaa",
+          alignment: "center",
+        },
+      },
+
+      defaultStyle: {
+        font: "Roboto",
+      },
+    };
+
+    // Имя файла (короткое и понятное)
+    let shortFileName = "";
+    if (period === "week") {
+      const startDay = start.getDate();
+      const endDay = end.getDate();
+      const monthNames = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+      const month = monthNames[start.getMonth()];
+      const year = start.getFullYear();
+      shortFileName = `Сменка_${startDay}-${endDay}_${month}_${year}`;
+    } else if (period === "month") {
+      const monthNames = [
+        "январь",
+        "февраль",
+        "март",
+        "апрель",
+        "май",
+        "июнь",
+        "июль",
+        "август",
+        "сентябрь",
+        "октябрь",
+        "ноябрь",
+        "декабрь",
+      ];
+      const month = monthNames[start.getMonth()];
+      const year = start.getFullYear();
+      shortFileName = `Сменка_${month}_${year}`;
+    } else {
+      shortFileName = `Сменка_${start.getFullYear()}`;
+    }
+
+    const fileName = `${shortFileName}.pdf`;
+
+    // Скачивание
+    pdfMake.createPdf(docDefinition).download(fileName);
+  }
+
+  // ==========================================================================
+  // 24. ФОКУС НА ПОЗИЦИЯХ В СВОДКЕ (ПРОКРУТКА ДЛИННЫХ НАЗВАНИЙ)
+  // ==========================================================================
+
+  let focusedPosition = null; // храним текущую выбранную позицию
+
+  // Функция для установки фокуса на элементе позиции
+  function focusSummaryPosition(element) {
+    // Если кликнули по той же позиции — просто оставляем фокус
+    if (focusedPosition === element) {
+      return;
+    }
+
+    // Убираем фокус с предыдущей позиции
+    if (focusedPosition) {
+      focusedPosition.classList.remove("focused");
+      const prevName = focusedPosition.querySelector(".summary-position-name");
+      if (prevName) {
+        prevName.scrollTo({ left: 0, behavior: "smooth" });
+      }
+    }
+
+    // Добавляем фокус новой позиции
+    element.classList.add("focused");
+    focusedPosition = element;
+
+    // Автопрокрутка названия
+    const nameElement = element.querySelector(".summary-position-name");
+    if (nameElement && nameElement.scrollWidth > nameElement.clientWidth) {
+      nameElement.scrollTo({
+        left: nameElement.scrollWidth - nameElement.clientWidth,
+        behavior: "smooth",
+      });
+    }
+  }
+
+  // Функция снятия фокуса
+  function unfocusAll() {
+    if (focusedPosition) {
+      focusedPosition.classList.remove("focused");
+      const nameElement = focusedPosition.querySelector(".summary-position-name");
+      if (nameElement) {
+        nameElement.scrollTo({ left: 0, behavior: "smooth" });
+      }
+      focusedPosition = null;
+    }
+  }
+
+  // Обработчик клика по позиции
+  document.addEventListener("click", (e) => {
+    const positionItem = e.target.closest(".summary-position-item");
+    if (positionItem) {
+      e.stopPropagation(); // останавливаем всплытие, чтобы не сработал обработчик документа
+      focusSummaryPosition(positionItem);
+    }
+  });
+
+  // Обработчик клика вне позиций
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".summary-position-item")) {
+      unfocusAll();
+    }
+  });
+
+  // Escape снимает фокус
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      unfocusAll();
+    }
+  });
+
+  // ==========================================================================
+  // 25. СИНХРОНИЗАЦИЯ С GOOGLE SHEETS (JSONP версия)
+  // ==========================================================================
+
+  const GS_API_URL =
+    "https://script.google.com/macros/s/AKfycbx3wbrgrJmPEPk9djQcKYczaiV_p-xWBNpHCTbuAVXtxzTLLznZRHid-jcLy65tX6H2/exec";
+
+  let pendingQueue = JSON.parse(localStorage.getItem("pendingQueue") || "[]");
+
+  // Функция JSONP-запроса
+  function jsonpRequest(url, successCallback, errorCallback) {
+    const callbackName = "jsonp_cb_" + Date.now();
+    const script = document.createElement("script");
+
+    window[callbackName] = function (data) {
+      delete window[callbackName];
+      document.body.removeChild(script);
+      successCallback(data);
+    };
+
+    script.src = url + "&callback=" + callbackName;
+    script.onerror = function () {
+      delete window[callbackName];
+      document.body.removeChild(script);
+      errorCallback();
+    };
+
+    document.body.appendChild(script);
+  }
+
+  // Функция отправки данных (POST с no-cors)
+  async function sendToGoogleSheets(data) {
+    if (!navigator.onLine) {
+      pendingQueue.push({ data, timestamp: Date.now() });
+      localStorage.setItem("pendingQueue", JSON.stringify(pendingQueue));
+      return false;
+    }
+
+    try {
+      await fetch(GS_API_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+
+      if (pendingQueue.length > 0) {
+        pendingQueue = [];
+        localStorage.setItem("pendingQueue", "[]");
+      }
+      return true;
+    } catch (error) {
+      console.log("Ошибка отправки:", error);
+      pendingQueue.push({ data, timestamp: Date.now() });
+      localStorage.setItem("pendingQueue", JSON.stringify(pendingQueue));
+      return false;
+    }
+  }
+
+  // Загрузка данных из облака по email (JSONP)
+  async function loadFromCloud(email) {
+    if (!email || !navigator.onLine) return false;
+
+    return new Promise((resolve) => {
+      jsonpRequest(
+        `${GS_API_URL}?type=restore&email=${encodeURIComponent(email)}`,
+        (result) => {
+          if (result.success && result.data && hasData(result.data)) {
+            restoreDataToLocalStorage(result.data);
+            updateUI();
+            console.log("✅ Данные восстановлены");
+            resolve(true);
+          } else {
+            console.log("❌ Нет данных для восстановления");
+            resolve(false);
+          }
+        },
+        () => {
+          console.log("❌ Ошибка JSONP");
+          resolve(false);
+        },
+      );
+    });
+  }
+
+  // Проверка, есть ли реальные данные
+  function hasData(data) {
+    return (
+      (data.days && data.days.length > 0) ||
+      (data.positions && data.positions.length > 0) ||
+      (data.settings && data.settings.length > 0)
+    );
+  }
+
+  // Восстановление данных в localStorage
+  function restoreDataToLocalStorage(data) {
+    console.log("🔄 Восстанавливаем данные:", data);
+
+    // Функция преобразования Excel-времени в HH:MM
+    function formatExcelTime(excelTimeStr) {
+      if (!excelTimeStr || typeof excelTimeStr !== "string") return "00:00";
+
+      // Если уже в формате HH:MM - возвращаем как есть
+      if (excelTimeStr.match(/^\d{2}:\d{2}$/)) return excelTimeStr;
+
+      try {
+        const date = new Date(excelTimeStr);
+        if (isNaN(date.getTime())) return "00:00";
+
+        const hours = date.getUTCHours().toString().padStart(2, "0");
+        const minutes = date.getUTCMinutes().toString().padStart(2, "0");
+        return `${hours}:${minutes}`;
+      } catch (e) {
+        console.log("Ошибка преобразования времени:", excelTimeStr);
+        return "00:00";
+      }
+    }
+
+    // Дни
+    if (data.days) {
+      console.log("📅 Найдено дней:", data.days.length);
+      data.days.forEach((row, index) => {
+        console.log(`День ${index}:`, row);
+        // Формат: [deviceId, email, date, startTime, endTime, positions, synced]
+
+        // ПРЕОБРАЗУЕМ ДАТУ!
+        const isoDate = new Date(row[2]);
+        const year = isoDate.getFullYear();
+        const month = isoDate.getMonth() + 1;
+        const day = isoDate.getDate();
+        const dateKey = `${year}-${month}-${day}`;
+
+        // ПРЕОБРАЗУЕМ ВРЕМЯ!
+        const startTime = formatExcelTime(row[3]);
+        const endTime = formatExcelTime(row[4]);
+
+        const dayData = {
+          startTime: startTime,
+          endTime: endTime,
+          positions: JSON.parse(row[5] || "[]"),
+        };
+
+        localStorage.setItem(dateKey, JSON.stringify(dayData));
+        console.log(`✅ День ${dateKey} сохранён: ${startTime} - ${endTime}`);
+      });
+    } else {
+      console.log("❌ Нет дней");
+    }
+
+    // Позиции
+    if (data.positions) {
+      console.log("📌 Найдено позиций:", data.positions.length);
+      const positions = [];
+      data.positions.forEach((row, index) => {
+        console.log(`Позиция ${index}:`, row);
+        positions.push({
+          id: row[2],
+          name: row[3],
+          price: row[4],
+        });
+      });
+      if (positions.length) {
+        localStorage.setItem("positions", JSON.stringify(positions));
+        console.log("✅ Позиции сохранены");
+      }
+    }
+
+    // Настройки
+    if (data.settings && data.settings.length) {
+      console.log("⚙️ Найдено настроек:", data.settings.length);
+      const last = data.settings[data.settings.length - 1];
+      console.log("Последние настройки:", last);
+      console.log("bonusPercent =", last[2], "teamSize =", last[3]);
+
+      const settings = {
+        bonusPercent: last[2],
+        teamSize: last[3],
+      };
+      localStorage.setItem("settings", JSON.stringify(settings));
+      console.log("✅ Настройки сохранены:", settings);
+    }
+  }
+
+  // Обновление интерфейса после восстановления
+  function updateUI() {
+    updateMainStats();
+    renderCalendar();
+    if (summaryPage.style.display === "flex") updateSummaryPage();
+  }
+
+  // Модалка загрузки (индикатор)
+  function showLoadingModal(message) {
+    const modal = document.createElement("div");
+    modal.id = "loadingModal";
+    modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20000;
+  `;
+    modal.innerHTML = `
+    <div style="
+      background: var(--color-bg-secondary);
+      padding: 24px;
+      border-radius: 24px;
+      text-align: center;
+      max-width: 200px;
+    ">
+      <div style="
+        border: 4px solid var(--color-bg-tertiary);
+        border-top: 4px solid var(--color-accent-primary);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 16px;
+      "></div>
+      <p style="color: var(--color-text-primary);">${message}</p>
+    </div>
+    <style>
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  `;
+    document.body.appendChild(modal);
+  }
+
+  function hideLoadingModal() {
+    const modal = document.getElementById("loadingModal");
+    if (modal) modal.remove();
+  }
+
+  // Модалка восстановления (предложение)
+  function showRestoreModal(data) {
+    const modal = document.createElement("div");
+    modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+    modal.innerHTML = `
+    <div style="
+      background: var(--color-bg-secondary);
+      padding: 24px;
+      border-radius: 24px;
+      max-width: 320px;
+      width: 90%;
+      text-align: center;
+    ">
+      <h3 style="color: var(--color-text-primary); margin-bottom: 12px;">🔄 Восстановить данные?</h3>
+      <p style="color: var(--color-text-secondary); font-size: 14px; margin-bottom: 20px;">
+        Найдена резервная копия ваших данных. Хотите восстановить?
+      </p>
+      <div style="display: flex; gap: 8px;">
+        <button id="restoreNo" style="
+          flex: 1;
+          padding: 12px;
+          background: var(--color-bg-tertiary);
+          border: none;
+          border-radius: 12px;
+          color: var(--color-text-secondary);
+          cursor: pointer;
+        ">Нет</button>
+        <button id="restoreYes" style="
+          flex: 1;
+          padding: 12px;
+          background: var(--color-accent-muted);
+          border: none;
+          border-radius: 12px;
+          color: var(--color-accent-primary);
+          cursor: pointer;
+        ">Да</button>
+      </div>
+    </div>
+  `;
+
+    document.body.appendChild(modal);
+
+    document.getElementById("restoreYes").addEventListener("click", () => {
+      restoreDataToLocalStorage(data);
+      updateUI();
+      modal.remove();
+      alert("✅ Данные восстановлены");
+    });
+
+    document.getElementById("restoreNo").addEventListener("click", () => {
+      modal.remove();
+    });
+  }
+
+  // Генерация deviceId (по-прежнему нужна для отправки)
+  function getOrCreateDeviceId() {
+    let deviceId = localStorage.getItem("deviceId");
+    if (!deviceId) {
+      deviceId = "device_" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem("deviceId", deviceId);
+    }
+    return deviceId;
+  }
+
+  function showSuccessModal(message) {
+    const modal = document.createElement("div");
+    modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20001;
+  `;
+    modal.innerHTML = `
+    <div style="
+      background: var(--color-bg-secondary);
+      padding: 24px;
+      border-radius: 24px;
+      max-width: 280px;
+      text-align: center;
+      animation: fadeInUp 0.3s ease;
+    ">
+      <div style="font-size: 48px; margin-bottom: 16px;">✅</div>
+      <p style="color: var(--color-text-primary); font-size: 16px;">${message}</p>
+      <button id="successOk" style="
+        margin-top: 20px;
+        padding: 12px 24px;
+        background: var(--color-accent-muted);
+        border: none;
+        border-radius: 12px;
+        color: var(--color-accent-primary);
+        font-weight: 500;
+        cursor: pointer;
+      ">ОК</button>
+    </div>
+  `;
+    document.body.appendChild(modal);
+    document.getElementById("successOk").addEventListener("click", () => modal.remove());
+  }
+
+  function showConfirmModal(title, message, onConfirm, onCancel) {
+    const modal = document.createElement("div");
+    modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20002;
+  `;
+    modal.innerHTML = `
+    <div style="
+      background: var(--color-bg-secondary);
+      padding: 24px;
+      border-radius: 24px;
+      max-width: 300px;
+      text-align: center;
+      animation: fadeInUp 0.3s ease;
+    ">
+      <h3 style="color: var(--color-text-primary); margin-bottom: 12px;">${title}</h3>
+      <p style="color: var(--color-text-secondary); font-size: 14px; margin-bottom: 24px;">${message}</p>
+      <div style="display: flex; gap: 12px;">
+        <button id="confirmCancel" style="
+          flex: 1;
+          padding: 12px;
+          background: var(--color-bg-tertiary);
+          border: none;
+          border-radius: 12px;
+          color: var(--color-text-secondary);
+          cursor: pointer;
+        ">Нет</button>
+        <button id="confirmOk" style="
+          flex: 1;
+          padding: 12px;
+          background: var(--color-accent-muted);
+          border: none;
+          border-radius: 12px;
+          color: var(--color-accent-primary);
+          cursor: pointer;
+        ">Да</button>
+      </div>
+    </div>
+  `;
+    document.body.appendChild(modal);
+    document.getElementById("confirmOk").addEventListener("click", () => {
+      modal.remove();
+      onConfirm();
+    });
+    document.getElementById("confirmCancel").addEventListener("click", () => {
+      modal.remove();
+      if (onCancel) onCancel();
+    });
+  }
+
+  // Проверка и запрос email (улучшенная версия)
+  function checkAndAskEmail() {
+    if (localStorage.getItem("emailAsked") === "true") return;
+
+    const emailModal = document.createElement("div");
+    emailModal.id = "emailModal";
+    emailModal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+    emailModal.innerHTML = `
+    <div style="
+      background: var(--color-bg-secondary);
+      padding: 24px;
+      border-radius: 24px;
+      max-width: 320px;
+      width: 90%;
+      text-align: center;
+      animation: fadeInUp 0.3s ease;
+    ">
+      <h3 style="color: var(--color-text-primary); margin-bottom: 12px;">🔐 Вход / Регистрация</h3>
+      <p style="color: var(--color-text-secondary); font-size: 14px; margin-bottom: 20px;">
+        Введите email, чтобы войти или создать нового пользователя
+      </p>
+      <input type="email" id="restoreEmail" placeholder="Ваш email" style="
+        width: 100%;
+        padding: 12px;
+        background: var(--color-bg-tertiary);
+        border: 1px solid transparent;
+        border-radius: 12px;
+        color: var(--color-text-primary);
+        margin-bottom: 20px;
+        box-sizing: border-box;
+      ">
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button id="emailLogin" style="
+          flex: 1;
+          padding: 12px;
+          background: var(--color-accent-muted);
+          border: none;
+          border-radius: 12px;
+          color: var(--color-accent-primary);
+          cursor: pointer;
+          min-width: 120px;
+        ">Войти</button>
+        <button id="emailRegister" style="
+          flex: 1;
+          padding: 12px;
+          background: var(--color-bg-tertiary);
+          border: none;
+          border-radius: 12px;
+          color: var(--color-text-secondary);
+          cursor: pointer;
+          min-width: 120px;
+        ">Новый пользователь</button>
+      </div>
+      <div style="margin-top: 12px;">
+        <button id="emailSkip" style="
+          padding: 8px 16px;
+          background: transparent;
+          border: none;
+          color: var(--color-text-tertiary);
+          font-size: 13px;
+          cursor: pointer;
+          text-decoration: underline;
+        ">Не сейчас</button>
+      </div>
+    </div>
+    <style>
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    </style>
+  `;
+
+    document.body.appendChild(emailModal);
+
+    const emailInput = document.getElementById("restoreEmail");
+    const loginBtn = document.getElementById("emailLogin");
+    const registerBtn = document.getElementById("emailRegister");
+    const skipBtn = document.getElementById("emailSkip");
+
+    loginBtn.addEventListener("click", async () => {
+      const email = emailInput.value.trim();
+      if (!email) return;
+
+      showLoadingModal("Проверка email...");
+
+      const restoreSuccess = await loadFromCloud(email);
+
+      hideLoadingModal();
+
+      if (restoreSuccess) {
+        localStorage.setItem("userEmail", email);
+        localStorage.setItem("emailAsked", "true");
+        emailModal.remove();
+        showSuccessModal("✅ Данные восстановлены");
+      } else {
+        showConfirmModal(
+          "Пользователь не найден",
+          "Хотите создать нового пользователя с этим email?",
+          async () => {
+            localStorage.setItem("userEmail", email);
+            localStorage.setItem("emailAsked", "true");
+            const deviceId = getOrCreateDeviceId();
+            await sendToGoogleSheets({ type: "user", deviceId, email });
+            emailModal.remove();
+            showSuccessModal("👤 Новый пользователь создан");
+          },
+          () => {},
+        );
+      }
+    });
+
+    registerBtn.addEventListener("click", async () => {
+      const email = emailInput.value.trim();
+      if (!email) return;
+
+      showLoadingModal("Создание пользователя...");
+
+      localStorage.setItem("userEmail", email);
+      localStorage.setItem("emailAsked", "true");
+
+      // Сохраняем старый deviceId или создаём новый
+      const deviceId = getOrCreateDeviceId();
+
+      // Отправляем пользователя в облако
+      await sendToGoogleSheets({ type: "user", deviceId, email });
+
+      // ОТПРАВЛЯЕМ ВСЕ СУЩЕСТВУЮЩИЕ ДАННЫЕ В ОБЛАКО!
+      await syncAllData();
+
+      hideLoadingModal();
+      emailModal.remove();
+      showSuccessModal("👤 Новый пользователь создан, данные сохранены в облаке");
+    });
+
+    skipBtn.addEventListener("click", () => {
+      localStorage.setItem("emailAsked", "true");
+      emailModal.remove();
+    });
+  }
+
+  // Функция синхронизации (отправка новых данных)
+  async function syncAllData() {
+    const deviceId = getOrCreateDeviceId();
+    const email = localStorage.getItem("userEmail");
+    if (!email || !navigator.onLine) return;
+
+    let lastSync = localStorage.getItem("lastSyncTime") || 0;
+    if (lastSync == 0) console.log("Первый запуск синхронизации");
+
+    // Собираем только новые дни
+    const days = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+        try {
+          const dayData = JSON.parse(localStorage.getItem(key));
+          if (!dayData._synced || dayData._synced < lastSync) {
+            days.push({ date: key, ...dayData });
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (days.length === 0) {
+      console.log("Нет новых данных для синхронизации");
+      return;
+    }
+
+    const now = Date.now();
+    for (const day of days) {
+      await sendToGoogleSheets({
+        type: "day",
+        deviceId,
+        email,
+        date: day.date,
+        startTime: day.startTime,
+        endTime: day.endTime,
+        positions: day.positions,
+      });
+
+      const savedDay = localStorage.getItem(day.date);
+      if (savedDay) {
+        const dayData = JSON.parse(savedDay);
+        dayData._synced = now;
+        localStorage.setItem(day.date, JSON.stringify(dayData));
+      }
+    }
+
+    // Отправляем справочник (только если позиции НЕ стандартные)
+    const positions = JSON.parse(localStorage.getItem("positions") || "[]");
+
+    // Массив стандартных позиций
+    const defaultPositions = [
+      { id: 1, name: "Гайка ГЕ8.935.200-02", price: 2.8391 },
+      { id: 2, name: "Гайка ГЕ8.935.200-03", price: 2.8391 },
+      { id: 3, name: "Гайка ГЕ8.935.200-04", price: 2.8391 },
+      { id: 4, name: "Гайка ГЕ8.935.200-05", price: 2.8391 },
+      { id: 5, name: "Гайка ГЕ8.935.200-06", price: 3.575 },
+      { id: 6, name: "Гайка ГЕ8.935.200-07", price: 3.575 },
+      { id: 7, name: "Гайка ГЕ8.935.200-08", price: 3.575 },
+      { id: 8, name: "Гайка ГЕ8.935.200-09", price: 3.575 },
+      { id: 9, name: "Гайка ГЕ8.935.200-10", price: 3.575 },
+      { id: 10, name: "кожух ГЕ8.634.487-02", price: 4.079865 },
+      { id: 11, name: "кожух ГЕ8.634.487-03", price: 4.079865 },
+      { id: 12, name: "кожух ГЕ8.634.487-04", price: 4.079865 },
+      { id: 13, name: "кожух ГЕ8.634.487-05", price: 4.079865 },
+      { id: 14, name: "кожух ГЕ8.634.487-06", price: 4.079865 },
+      { id: 15, name: "кожух ГЕ8.634.487-07", price: 4.079865 },
+      { id: 16, name: "кожух ГЕ8.634.487-08", price: 4.079865 },
+      { id: 17, name: "кожух ГЕ8.634.487-09", price: 4.079865 },
+      { id: 18, name: "гайка 043", price: 2.55 },
+      { id: 19, name: "кожух ГЕ8.634.419", price: 12 },
+      { id: 20, name: "кожух ГЕ8.634.419-01", price: 12 },
+      { id: 21, name: "кожух ГЕ8.634.419-07", price: 12 },
+      { id: 22, name: "кожух ГЕ8.634.419-02", price: 12 },
+      { id: 23, name: "кожух ГЕ8.634.419-03", price: 12 },
+      { id: 24, name: "кожух ГЕ8.634.419-04", price: 12 },
+      { id: 25, name: "кожух ГЕ8.634.419-05", price: 12 },
+    ];
+
+    // Функция сравнения массивов позиций
+    function isDefaultPositions(arr) {
+      if (arr.length !== defaultPositions.length) return false;
+      return arr.every(
+        (pos, i) =>
+          pos.id === defaultPositions[i].id &&
+          pos.name === defaultPositions[i].name &&
+          Math.abs(pos.price - defaultPositions[i].price) < 0.001, // допускаем погрешность
+      );
+    }
+
+    const lastPositionsSync = localStorage.getItem("lastPositionsSync") || 0;
+    if (!lastPositionsSync || lastPositionsSync < now) {
+      // Отправляем только если позиции НЕ стандартные
+      if (!isDefaultPositions(positions)) {
+        await sendToGoogleSheets({
+          type: "positions",
+          deviceId,
+          email,
+          positions,
+        });
+        console.log("📤 Отправлены кастомные позиции");
+      } else {
+        console.log("📤 Стандартные позиции не отправляем");
+      }
+      localStorage.setItem("lastPositionsSync", now);
+    }
+
+    // Отправляем настройки
+    const settings = JSON.parse(localStorage.getItem("settings") || "{}");
+    const lastSettingsSync = localStorage.getItem("lastSettingsSync") || 0;
+    if (!lastSettingsSync || lastSettingsSync < now) {
+      await sendToGoogleSheets({
+        type: "settings",
+        deviceId,
+        email,
+        bonusPercent: settings.bonusPercent || 0,
+        teamSize: settings.teamSize || 1,
+      });
+      localStorage.setItem("lastSettingsSync", now);
+    }
+
+    localStorage.setItem("lastSyncTime", now);
+  }
+
+  // Запуск при загрузке
+  setTimeout(async () => {
+    const email = localStorage.getItem("userEmail");
+    const hasDays = Object.keys(localStorage).some((k) => k.match(/^\d{4}-\d{1,2}-\d{1,2}$/));
+    const hasSettings = localStorage.getItem("settings") && localStorage.getItem("settings") !== "{}";
+    const hasPositions = localStorage.getItem("positions") && localStorage.getItem("positions") !== "[]";
+    const hasData = hasDays || hasSettings || hasPositions;
+
+    console.log("🔍 Проверка при запуске:", { hasData, email, online: navigator.onLine });
+
+    if (!navigator.onLine) return;
+
+    if (email) {
+      if (!hasData) {
+        console.log("📥 Есть email, но данных нет. Пытаемся восстановить...");
+        showLoadingModal("Восстановление данных...");
+        const restored = await loadFromCloud(email);
+        hideLoadingModal();
+        if (restored) {
+          console.log("✅ Данные восстановлены");
+        } else {
+          console.log("❌ Данные не найдены в облаке");
+        }
+      } else {
+        console.log("📤 Есть данные и email. Синхронизируем...");
+        syncAllData();
+      }
+    } else {
+      console.log("📧 Нет email. Спрашиваем...");
+      checkAndAskEmail();
+    }
+  }, 1000);
+
+  window.addEventListener("online", () => {
+    console.log("🌐 Интернет появился, синхронизируем...");
+    syncAllData();
+  });
+
+  // ==========================================================================
+  // 26. ЗОНА ВОССТАНОВЛЕНИЯ — РУЧНОЕ ВОССТАНОВЛЕНИЕ ДАННЫХ
+  // ==========================================================================
+
+  function restoreDataManually() {
+    // Показываем модалку с email (ту же, что при первом запуске)
+    // Но с небольшими изменениями — убираем кнопку "Не сейчас"
+
+    const emailModal = document.createElement("div");
+    emailModal.id = "restoreManualModal";
+    emailModal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+    emailModal.innerHTML = `
+    <div style="
+      background: var(--color-bg-secondary);
+      padding: 24px;
+      border-radius: 24px;
+      max-width: 320px;
+      width: 90%;
+      text-align: center;
+      animation: fadeInUp 0.3s ease;
+    ">
+      <h3 style="color: var(--color-text-primary); margin-bottom: 12px;">🔄 Восстановление</h3>
+      <p style="color: var(--color-text-secondary); font-size: 14px; margin-bottom: 20px;">
+        Введите email, чтобы восстановить данные из облака
+      </p>
+      <input type="email" id="restoreManualEmail" placeholder="Ваш email" style="
+        width: 100%;
+        padding: 12px;
+        background: var(--color-bg-tertiary);
+        border: 1px solid transparent;
+        border-radius: 12px;
+        color: var(--color-text-primary);
+        margin-bottom: 20px;
+        box-sizing: border-box;
+      ">
+      <div style="display: flex; gap: 12px;">
+        <button id="restoreManualCancel" style="
+          flex: 1;
+          padding: 12px;
+          background: var(--color-bg-tertiary);
+          border: none;
+          border-radius: 12px;
+          color: var(--color-text-secondary);
+          cursor: pointer;
+        ">Отмена</button>
+        <button id="restoreManualConfirm" style="
+          flex: 1;
+          padding: 12px;
+          background: var(--color-accent-muted);
+          border: none;
+          border-radius: 12px;
+          color: var(--color-accent-primary);
+          cursor: pointer;
+        ">Восстановить</button>
+      </div>
+    </div>
+    <style>
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    </style>
+  `;
+
+    document.body.appendChild(emailModal);
+
+    const emailInput = document.getElementById("restoreManualEmail");
+    const cancelBtn = document.getElementById("restoreManualCancel");
+    const confirmBtn = document.getElementById("restoreManualConfirm");
+
+    cancelBtn.addEventListener("click", () => {
+      emailModal.remove();
+    });
+
+    confirmBtn.addEventListener("click", async () => {
+      const email = emailInput.value.trim();
+      if (!email) return;
+
+      showLoadingModal("Восстановление...");
+
+      const restoreSuccess = await loadFromCloud(email);
+
+      hideLoadingModal();
+
+      if (restoreSuccess) {
+        emailModal.remove();
+        showSuccessModal("✅ Данные восстановлены");
+      } else {
+        emailModal.remove();
+        showErrorModal("❌ Данные не найдены");
+      }
+    });
+  }
+
+  // Добавляем обработчик на кнопку
+  document.addEventListener("DOMContentLoaded", () => {
+    const restoreBtn = document.getElementById("restoreDataBtn");
+    if (restoreBtn) {
+      restoreBtn.addEventListener("click", restoreDataManually);
+    }
+  });
+
+  function showErrorModal(message) {
+    const modal = document.createElement("div");
+    modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20001;
+  `;
+    modal.innerHTML = `
+    <div style="
+      background: var(--color-bg-secondary);
+      padding: 24px;
+      border-radius: 24px;
+      max-width: 280px;
+      text-align: center;
+      animation: fadeInUp 0.3s ease;
+    ">
+      <div style="font-size: 48px; margin-bottom: 16px;">❌</div>
+      <p style="color: var(--color-text-primary); font-size: 16px;">${message}</p>
+      <button id="errorOk" style="
+        margin-top: 20px;
+        padding: 12px 24px;
+        background: var(--color-accent-muted);
+        border: none;
+        border-radius: 12px;
+        color: var(--color-accent-primary);
+        font-weight: 500;
+        cursor: pointer;
+      ">ОК</button>
+    </div>
+  `;
+    document.body.appendChild(modal);
+    document.getElementById("errorOk").addEventListener("click", () => modal.remove());
+  }
+
+  // Для отладки — делаем функции глобальными
+  window.syncAllData = syncAllData;
+  window.loadFromCloud = loadFromCloud;
+  window.sendToGoogleSheets = sendToGoogleSheets;
 })();
